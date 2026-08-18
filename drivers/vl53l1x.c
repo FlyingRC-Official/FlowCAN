@@ -46,7 +46,7 @@ bool tof_step(tof_t *t, uint32_t now, range_sample_t *s, bool *fresh)
     }
     if(t->state==TOF_CALIBRATING&&time_reached_u32(now,t->deadline_ms)){
         uint8_t ready=0U;if(VL53L1X_CheckForDataReady(VL53L1X_I2C_ADDRESS,&ready)!=0){enter_fault(t,now,s,fresh);return false;}
-        if(ready!=0U){if(VL53L1X_ClearInterrupt(VL53L1X_I2C_ADDRESS)!=0||VL53L1X_StopRanging(VL53L1X_I2C_ADDRESS)!=0||VL53L1_WrByte(VL53L1X_I2C_ADDRESS,VL53L1_VHV_CONFIG__TIMEOUT_MACROP_LOOP_BOUND,0x09U)!=0||VL53L1_WrByte(VL53L1X_I2C_ADDRESS,0x0BU,0U)!=0||!configure_continuous()){enter_fault(t,now,s,fresh);return false;}t->state=TOF_RUNNING;}
+        if(ready!=0U){if(VL53L1X_ClearInterrupt(VL53L1X_I2C_ADDRESS)!=0||VL53L1X_StopRanging(VL53L1X_I2C_ADDRESS)!=0||VL53L1_WrByte(VL53L1X_I2C_ADDRESS,VL53L1_VHV_CONFIG__TIMEOUT_MACROP_LOOP_BOUND,0x09U)!=0||VL53L1_WrByte(VL53L1X_I2C_ADDRESS,0x0BU,0U)!=0||!configure_continuous()){enter_fault(t,now,s,fresh);return false;}t->state=TOF_RUNNING;t->timeout_ms=now+VL53L1X_SAMPLE_TIMEOUT_MS;}
         else if(time_reached_u32(now,t->timeout_ms)){enter_fault(t,now,s,fresh);return false;}else t->deadline_ms=now+1U;
     }
     if (t->state==TOF_RUNNING && t->irq_pending) {
@@ -59,8 +59,10 @@ bool tof_step(tof_t *t, uint32_t now, range_sample_t *s, bool *fresh)
         else if (r.Status==0U && s->distance_mm>RANGE_MAX_MM) s->status=RANGE_STATUS_TOO_FAR;
         else if (r.Status==0U) s->status=RANGE_STATUS_VALID;
         else s->status=RANGE_STATUS_INVALID;
+        t->timeout_ms=now+VL53L1X_SAMPLE_TIMEOUT_MS;
         *fresh=true;
     }
+    if(t->state==TOF_RUNNING&&!t->irq_pending&&time_reached_u32(now,t->timeout_ms)){enter_fault(t,now,s,fresh);return false;}
     if (t->state==TOF_RETRY_WAIT && time_reached_u32(now,t->deadline_ms)) { platform_tof_xshut(true); t->state=TOF_INITIALIZING; t->deadline_ms=now+3U; t->init_index=0U; }
     return t->state==TOF_RUNNING;
 }

@@ -19,8 +19,9 @@ INCLUDES := -Iconfig -Iinclude -Iapp -Idrivers -Iplatform -Iprotocol \
 
 ARCH := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft
 COMMON_WARN := -Wall -Wextra -Werror -Wshadow -Wdouble-promotion -Wformat=2 -Wundef
+CANARD_DEFS := -DCANARD_ENABLE_DEADLINE=1
 CFLAGS := $(ARCH) -std=c11 -Os -ffunction-sections -fdata-sections -fno-common -fno-builtin \
- $(COMMON_WARN) $(INCLUDES) -DAT32F415KBU7_4 -DHEXT_VALUE=8000000UL
+ $(COMMON_WARN) $(INCLUDES) $(CANARD_DEFS) -DAT32F415KBU7_4 -DHEXT_VALUE=8000000UL
 LDFLAGS := $(ARCH) -Tlinker/at32f415kb_flash.ld -Wl,--gc-sections -Wl,-Map=$(BUILD)/$(PROJECT).map \
  --specs=nano.specs --specs=nosys.specs -Wl,--cref
 
@@ -42,7 +43,7 @@ SOURCES := app/main.c app/rtos_app.c app/supervisor.c app/activity.c app/status_
  $(GEN)/uavcan.protocol.HardwareVersion.c $(GEN)/uavcan.protocol.SoftwareVersion.c
 OBJECTS := $(addprefix $(BUILD)/,$(SOURCES:.c=.o)) $(BUILD)/startup/startup_at32f415.o
 
-HOST_SOURCES := tests/test_main.c protocol/msp.c protocol/dronecan.c drivers/pmw3901.c drivers/vl53l1x.c app/scheduler.c app/supervisor.c app/activity.c app/can_recovery.c \
+HOST_SOURCES := tests/test_main.c protocol/msp.c protocol/dronecan.c drivers/pmw3901.c drivers/vl53l1x.c app/scheduler.c app/supervisor.c app/activity.c app/status_led.c app/can_recovery.c \
  third_party/libcanard/canard.c $(GEN)/com.hex.equipment.flow.Measurement.c \
  $(GEN)/uavcan.equipment.range_sensor.Measurement.c $(GEN)/uavcan.CoarseOrientation.c \
  $(GEN)/uavcan.Timestamp.c $(GEN)/uavcan.protocol.NodeStatus.c $(GEN)/uavcan.protocol.GetNodeInfo_req.c \
@@ -70,7 +71,7 @@ $(BUILD)/$(PROJECT).bin: $(BUILD)/$(PROJECT).elf
 
 $(BUILD)/host_tests: $(HOST_SOURCES)
 	@mkdir -p $(@D)
-	$(HOST_CC) -std=c11 -O2 $(COMMON_WARN) $(INCLUDES) $(HOST_SOURCES) -lm -o $@
+	$(HOST_CC) -std=c11 -O2 $(COMMON_WARN) $(INCLUDES) $(CANARD_DEFS) $(HOST_SOURCES) -lm -o $@
 
 test: $(BUILD)/host_tests
 	./$(BUILD)/host_tests
@@ -87,6 +88,7 @@ release: clean verify
 	cp $(BUILD)/$(PROJECT).elf $(BUILD)/$(PROJECT).hex $(BUILD)/$(PROJECT).bin $(BUILD)/$(PROJECT).map $(BUILD)/release/
 	$(SIZE) $(BUILD)/$(PROJECT).elf > $(BUILD)/release/SIZE.txt
 	cd $(BUILD)/release && shasum -a 256 $(PROJECT).elf $(PROJECT).hex $(PROJECT).bin $(PROJECT).map SIZE.txt > SHA256SUMS.txt
+	cd $(BUILD)/release && shasum -a 256 -c SHA256SUMS.txt
 
 flash: $(BUILD)/$(PROJECT).elf
 	@command -v openocd >/dev/null || { echo "openocd not installed"; exit 1; }

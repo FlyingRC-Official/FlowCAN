@@ -11,6 +11,7 @@
 #include "scheduler.h"
 #include "supervisor.h"
 #include "activity.h"
+#include "status_led.h"
 #include "can_recovery.h"
 #include "vl53l1x.h"
 #include "VL53L1X_api.h"
@@ -29,14 +30,22 @@ static void test_msp(void)
     range_sample_t r={.distance_mm=1234,.quality=88,.status=RANGE_STATUS_VALID};n=msp_encode_range(&r,b,sizeof(b));assert(n==14U&&get_i32(&b[9])==1234);r.status=RANGE_STATUS_FAULT;n=msp_encode_range(&r,b,sizeof(b));assert(b[8]==0U&&get_i32(&b[9])==-1);
 }
 
+static uint32_t fake_micros;
+static bool fake_can_tx_enabled=true;
+static uint8_t spi_rx[16];
+static size_t spi_rx_length,spi_rx_index;
+static bool spi_transfer_ok=true;
+
 static void test_dronecan(void)
 {
     flow_sample_t f={.integration_us=25000,.integral_x_rad=0.1f,.integral_y_rad=-0.2f,.quality=200,.valid=true};dronecan_payload_t p;assert(dronecan_encode_flow(&f,&p));CanardRxTransfer t=transfer_from(p.data,p.length);struct com_hex_equipment_flow_Measurement fm;assert(!com_hex_equipment_flow_Measurement_decode(&t,&fm));assert(fabsf(fm.integration_interval-0.025f)<0.0001f&&isnan(fm.rate_gyro_integral[0])&&isnan(fm.rate_gyro_integral[1])&&fm.quality==200U);
-    range_sample_t r={.distance_mm=1500,.status=RANGE_STATUS_VALID};assert(dronecan_encode_range(&r,&p));t=transfer_from(p.data,p.length);struct uavcan_equipment_range_sensor_Measurement rm;assert(!uavcan_equipment_range_sensor_Measurement_decode(&t,&rm));assert(rm.reading_type==1U&&fabsf(rm.range-1.5f)<0.01f&&rm.timestamp.usec==0U);
+    range_sample_t r={.distance_mm=1500,.status=RANGE_STATUS_VALID};assert(dronecan_encode_range(&r,&p));t=transfer_from(p.data,p.length);struct uavcan_equipment_range_sensor_Measurement rm;assert(!uavcan_equipment_range_sensor_Measurement_decode(&t,&rm));assert(rm.reading_type==1U&&fabsf(rm.range-1.5f)<0.01f&&rm.timestamp.usec==0U&&rm.beam_orientation_in_body_frame.orientation_defined==0U);
+    r.status=RANGE_STATUS_TOO_CLOSE;r.distance_mm=1U;assert(dronecan_encode_range(&r,&p));t=transfer_from(p.data,p.length);assert(!uavcan_equipment_range_sensor_Measurement_decode(&t,&rm));assert(rm.reading_type==2U&&fabsf(rm.range-((float)RANGE_MIN_MM/1000.0f))<0.001f);
+    r.status=RANGE_STATUS_TOO_FAR;r.distance_mm=65535U;assert(dronecan_encode_range(&r,&p));t=transfer_from(p.data,p.length);assert(!uavcan_equipment_range_sensor_Measurement_decode(&t,&rm));assert(rm.reading_type==3U&&fabsf(rm.range-((float)RANGE_MAX_MM/1000.0f))<0.001f);
     assert(dronecan_range_reading_type(RANGE_STATUS_TOO_CLOSE)==2U&&dronecan_range_reading_type(RANGE_STATUS_TOO_FAR)==3U&&dronecan_range_reading_type(RANGE_STATUS_FAULT)==0U);
     assert(dronecan_encode_node_status(7U,HEALTH_CAN_BUS_OFF,&p));t=transfer_from(p.data,p.length);struct uavcan_protocol_NodeStatus ns;assert(!uavcan_protocol_NodeStatus_decode(&t,&ns));assert(ns.uptime_sec==7U&&ns.health==3U&&ns.vendor_specific_status_code==HEALTH_CAN_BUS_OFF);
     assert(dronecan_encode_node_status(8U,HEALTH_RTOS_STACK_LOW,&p));t=transfer_from(p.data,p.length);assert(!uavcan_protocol_NodeStatus_decode(&t,&ns));assert(ns.health==2U&&ns.vendor_specific_status_code==HEALTH_RTOS_STACK_LOW);
-    dronecan_init();bool saturated=false;for(unsigned i=0;i<100U;i++)if(!dronecan_publish_flow(&f)){saturated=true;break;}assert(saturated);dronecan_poll(1000U,HEALTH_CAN_TX_OVERFLOW);assert(dronecan_publish_flow(&f));dronecan_poll(1001U,0U);
+    fake_micros=0U;fake_can_tx_enabled=false;dronecan_init();bool saturated=false;for(unsigned i=0;i<100U;i++)if(!dronecan_publish_flow(&f)){saturated=true;break;}assert(saturated);assert(dronecan_take_tx_overflow());assert(!dronecan_take_tx_overflow());fake_micros=200000U;dronecan_poll(200U,HEALTH_CAN_TX_OVERFLOW);assert(dronecan_publish_flow(&f));fake_can_tx_enabled=true;dronecan_poll(201U,0U);
 }
 
 static void test_math_and_time(void)
@@ -47,20 +56,24 @@ static void test_math_and_time(void)
     periodic_task_t task;periodic_task_init(&task,0xFFFFFFF0U,20U);assert(!periodic_task_due(&task,0U));assert(periodic_task_due(&task,4U));assert(!periodic_task_due(&task,5U));assert(elapsed_u32(1U,0xFFFFFFFFU)==2U);
     assert(ring_can_write(256U,0U,0U,255U));assert(!ring_can_write(256U,0U,0U,256U));assert(ring_used(256U,2U,250U)==8U);assert(ring_can_write(256U,2U,250U,247U));assert(!ring_can_write(256U,2U,250U,248U));
     const uint32_t good_watermarks[]={64U,48U,32U};const uint32_t low_watermarks[]={64U,31U,80U};assert(supervisor_should_feed(0x07U,0x07U,false));assert(!supervisor_should_feed(0x03U,0x07U,false));assert(!supervisor_should_feed(0x07U,0x07U,true));assert(!supervisor_stack_low(good_watermarks,3U,32U));assert(supervisor_stack_low(low_watermarks,3U,32U));
+    memset(spi_rx,0,sizeof(spi_rx));spi_rx[1]=0x80U;spi_rx[3]=0x34U;spi_rx[4]=0x12U;spi_rx[5]=0xFEU;spi_rx[6]=0xFFU;spi_rx[7]=77U;spi_rx_length=13U;spi_rx_index=0U;spi_transfer_ok=true;assert(pmw3901_read_motion(&m)&&m.motion&&m.dx==0x1234&&m.dy==-2&&m.quality==77U);
+    memset(spi_rx,0xFF,sizeof(spi_rx));spi_rx_length=13U;spi_rx_index=0U;assert(!pmw3901_read_motion(&m));spi_transfer_ok=false;assert(!pmw3901_read_motion(&m));spi_transfer_ok=true;memset(spi_rx,0,sizeof(spi_rx));spi_rx[1]=PMW3901_PRODUCT_ID;spi_rx[3]=PMW3901_INVERSE_ID;spi_rx_length=4U;spi_rx_index=0U;assert(pmw3901_health_check());spi_rx[3]=0U;spi_rx_index=0U;assert(!pmw3901_health_check());
 }
 
-static bool led_state[4];static bool tof_enabled;static int tof_init_error;static VL53L1X_Result_t tof_result;
+static bool led_state[4];static bool tof_enabled;static int tof_init_error;static VL53L1X_Result_t tof_result;static uint8_t ws_r,ws_g,ws_b;
 static void test_state_machines(void)
 {
     activity_init();activity_pulse(LED_PMW,100U);assert(led_state[LED_PMW]);activity_step(129U);assert(led_state[LED_PMW]);activity_step(130U);assert(!led_state[LED_PMW]);
     can_recovery_t c;can_recovery_init(&c);assert(!can_recovery_step(&c,true,0xFFFFFF00U,1000U));assert(!can_recovery_step(&c,true,500U,1000U));assert(can_recovery_step(&c,true,744U,1000U));assert(!can_recovery_step(&c,false,745U,1000U));
-    tof_t tof;range_sample_t sample;bool fresh;tof_init_error=-1;tof_begin(&tof,100U);assert(!tof_enabled);assert(!tof_step(&tof,102U,&sample,&fresh)&&tof_enabled);assert(!tof_step(&tof,105U,&sample,&fresh)&&fresh&&sample.status==RANGE_STATUS_FAULT);assert(!tof_step(&tof,1104U,&sample,&fresh));assert(!tof_step(&tof,1105U,&sample,&fresh)&&tof_enabled);tof_init_error=0;for(unsigned i=0;i<91U;i++)assert(!tof_step(&tof,1108U,&sample,&fresh));assert(tof_step(&tof,1109U,&sample,&fresh));tof_result.Status=0U;tof_result.Distance=1000U;tof_irq_notify(&tof);assert(tof_step(&tof,1110U,&sample,&fresh)&&fresh&&sample.status==RANGE_STATUS_VALID&&sample.distance_mm==1000);
+    tof_t tof;range_sample_t sample;bool fresh;tof_init_error=-1;tof_begin(&tof,100U);assert(!tof_enabled);assert(!tof_step(&tof,102U,&sample,&fresh)&&tof_enabled);assert(!tof_step(&tof,105U,&sample,&fresh)&&fresh&&sample.status==RANGE_STATUS_FAULT);assert(!tof_step(&tof,1104U,&sample,&fresh));assert(!tof_step(&tof,1105U,&sample,&fresh)&&tof_enabled);tof_init_error=0;for(unsigned i=0;i<91U;i++)assert(!tof_step(&tof,1108U,&sample,&fresh));assert(tof_step(&tof,1109U,&sample,&fresh));tof_result.Status=0U;tof_result.Distance=1000U;tof_irq_notify(&tof);assert(tof_step(&tof,1110U,&sample,&fresh)&&fresh&&sample.status==RANGE_STATUS_VALID&&sample.distance_mm==1000);assert(tof_step(&tof,1209U,&sample,&fresh)&&!fresh);assert(!tof_step(&tof,1210U,&sample,&fresh)&&fresh&&sample.status==RANGE_STATUS_FAULT);
+    status_led_step(0U,HEALTH_RTOS_STACK_LOW,false);assert(ws_r==64U&&ws_g==16U&&ws_b==0U);
 }
 int main(void){test_msp();test_dronecan();test_math_and_time();test_state_machines();puts("FlowCAN host tests: PASS");return 0;}
 
 /* Hardware symbols referenced by drivers/dronecan are not executed in host tests. */
-uint32_t platform_millis(void){return 0U;}uint32_t platform_micros(void){return 0U;}void platform_delay_us(uint32_t us){(void)us;}void platform_pmw_cs(bool a){(void)a;}void platform_pmw_reset(bool a){(void)a;}uint8_t platform_spi_transfer(uint8_t v){return v;}
-bool platform_can_tx(const CanardCANFrame *f){(void)f;return true;}bool platform_can_rx_pop(CanardCANFrame *f,uint64_t *t){(void)f;(void)t;return false;}bool platform_can_bus_off(void){return false;}
+uint32_t platform_millis(void){return fake_micros/1000U;}uint32_t platform_micros(void){return fake_micros;}void platform_delay_us(uint32_t us){(void)us;}void platform_pmw_cs(bool a){(void)a;}void platform_pmw_reset(bool a){(void)a;}bool platform_spi_transfer(uint8_t v,uint8_t *received){if(!spi_transfer_ok)return false;*received=spi_rx_index<spi_rx_length?spi_rx[spi_rx_index++]:v;return true;}
+bool platform_can_tx(const CanardCANFrame *f){(void)f;return fake_can_tx_enabled;}bool platform_can_rx_pop(CanardCANFrame *f,uint64_t *t){(void)f;(void)t;return false;}bool platform_can_bus_off(void){return false;}
 void platform_activity_led(activity_led_t led,bool on){led_state[(unsigned)led]=on;}void platform_tof_xshut(bool enabled){tof_enabled=enabled;}
+bool platform_ws2812_busy(void){return false;}bool platform_ws2812_start(uint8_t r,uint8_t g,uint8_t b){ws_r=r;ws_g=g;ws_b=b;return true;}
 const uint8_t VL51L1X_DEFAULT_CONFIGURATION[91]={0};
 int8_t VL53L1_WrByte(uint16_t d,uint16_t r,uint8_t v){(void)d;(void)r;(void)v;return(int8_t)tof_init_error;}VL53L1X_ERROR VL53L1X_SetDistanceMode(uint16_t d,uint16_t v){(void)d;(void)v;return 0;}VL53L1X_ERROR VL53L1X_SetTimingBudgetInMs(uint16_t d,uint16_t v){(void)d;(void)v;return 0;}VL53L1X_ERROR VL53L1X_SetInterMeasurementInMs(uint16_t d,uint32_t v){(void)d;(void)v;return 0;}VL53L1X_ERROR VL53L1X_StartRanging(uint16_t d){(void)d;return 0;}VL53L1X_ERROR VL53L1X_StopRanging(uint16_t d){(void)d;return 0;}VL53L1X_ERROR VL53L1X_CheckForDataReady(uint16_t d,uint8_t *ready){(void)d;*ready=1U;return 0;}VL53L1X_ERROR VL53L1X_GetResult(uint16_t d,VL53L1X_Result_t *r){(void)d;*r=tof_result;return 0;}VL53L1X_ERROR VL53L1X_ClearInterrupt(uint16_t d){(void)d;return 0;}

@@ -97,7 +97,7 @@ For INAV, connect the module UART to a serial port configured for MSP sensor inp
 
 The flow message contains radians integrated over the real sample interval. Because the board has no gyro, both `rate_gyro_integral` fields are IEEE-754 `NaN`, meaning unavailable. PX4 handles non-finite gyro integrals as unavailable. The current ArduPilot HereFlow DroneCAN backend does not make the same check, so this firmware does **not** claim ArduPilot DroneCAN optical-flow fusion; use MSP for that. Node discovery, decoding, and DroneCAN range remain in scope.
 
-Range timestamps are zero because the node does not implement network time synchronization. The beam orientation is defined as downward in the body frame; valid/too-close/too-far/undefined map to the standard `reading_type` values.
+Range timestamps are zero because the node does not implement network time synchronization. Beam orientation is deliberately marked undefined until the receiver-specific body-down encoding is verified on hardware; valid/too-close/too-far/undefined map to the standard `reading_type` values, with too-close/too-far ranges clamped to the configured limits.
 
 The 16-bit NodeStatus vendor code exposes:
 
@@ -119,7 +119,7 @@ The 16-bit NodeStatus vendor code exposes:
 
 PMW3901 initialization verifies Product ID `0x49` and inverse ID `0xB6`, then applies the pinned Bitcraze MIT register sequence. Motion EXTI only notifies the optical-flow task; Motion Burst is read and accumulated there before publication clears the accumulator.
 
-VL53L1X uses the ST ULD core in long continuous mode with a 20 ms timing budget and 25 ms inter-measurement period (40 Hz target). Every I2C phase has a 5 ms deadline. A failed transaction invalidates distance data, shuts the device down, and starts a staged one-second retry; stale distance is never relabeled as valid.
+VL53L1X uses the ST ULD core in long continuous mode with a 20 ms timing budget and 25 ms inter-measurement period (40 Hz target). Every I2C phase has a 5 ms deadline; failures issue STOP and reset/reinitialize I2C1. If no fresh sample arrives for 100 ms, distance is invalidated, the device is shut down, and a staged one-second retry begins; stale distance is never relabeled as valid.
 
 Activity LEDs stay on for 30 ms per event. WS2812 states are blue/startup, green/healthy, red/PMW fault, yellow/ToF fault, fast red/both sensors or fatal RTOS state, and purple/CAN Bus-Off. Each critical task reports a heartbeat; the System task refreshes the 500 ms independent watchdog only when Communication, Optical Flow and Range have all reported within the 100 ms supervision window. Stack overflow or an RTOS assertion deliberately stops feeding the watchdog.
 
@@ -137,6 +137,6 @@ See [`THIRD_PARTY.md`](THIRD_PARTY.md) for versions and licenses.
 
 ## Validation boundary
 
-Automated checks cover MSP golden layout/CRC/parser failures, DroneCAN encode/decode including NaN gyro and range/status mapping, PMW transform/accumulation/reset, 32-bit timer wrap scheduling, UART whole-frame capacity, heartbeat decisions and stack low-water decisions. They cross-build ELF/HEX/BIN/MAP, assert memory limits/vector base/FreeRTOS exception handlers/static stack budget/entry point, and search for allocation calls.
+Automated checks cover MSP golden layout/CRC/parser failures, DroneCAN encode/decode including NaN gyro, undefined orientation and range/status mapping, PMW transform/accumulation/reset, stale-ToF timeout, 32-bit timer wrap scheduling, UART whole-frame capacity, heartbeat decisions and stack low-water decisions. They cross-build ELF/HEX/BIN/MAP, assert memory limits/vector base/FreeRTOS exception handlers/static stack budget/entry point, verify release checksums, and search for allocation calls.
 
 They do **not** validate task switching on AT32F415, ISR wakeups, measured stack margins, watchdog reset behavior, oscillator accuracy, electrical pin mapping, sensor communication, DMA waveform, CAN transceiver behavior, flight-controller setup, recovery on a physical bus, or 30-minute stability. Complete and retain evidence from [`docs/bringup-checklist.md`](docs/bringup-checklist.md) before calling the hardware flight-ready.

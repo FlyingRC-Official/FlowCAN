@@ -18,7 +18,7 @@ None of the items below are satisfied by a successful host test or firmware buil
 | MSP | Logic-analyzer capture on PA9 at 115200 8N1 | Valid `$X<` frames, IDs `1F02/1F01`, CRC and cadence | Not tested |
 | INAV | Configure MSP sensor input and inspect optical flow/range telemetry | Correct axes/counts/range and quality | Not tested |
 | ArduPilot | Use the MSP sensor path for complete flow fusion | Flow and range accepted; EKF behavior checked safely | Not tested |
-| DroneCAN | Connect through a proper CAN transceiver and DroneCAN GUI | Node 125, node name, NodeStatus, GetNodeInfo, flow/range decoding | Not tested |
+| DroneCAN | Connect through a proper CAN transceiver and DroneCAN GUI | Node 125, node name, NodeStatus, GetNodeInfo, flow/range decoding; range orientation remains undefined until body-down encoding is proven | Not tested |
 | PX4 | Inspect DroneCAN optical flow and distance sensor topics | NaN gyro is treated unavailable; flow/range fields correct | Not tested |
 | Bus-Off | Force CAN dominant/stuck/disconnect fault then restore | Purple fault state, no unbounded queue, automatic recovery | Not tested |
 | LEDs | Trigger each sensor/protocol/fault event | PA0–PA3 active-low hold ~30 ms; RGB patterns match README | Not tested |

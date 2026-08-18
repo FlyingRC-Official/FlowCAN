@@ -72,6 +72,7 @@ static void health_update(health_flags_t set_bits, health_flags_t clear_bits)
     }
 }
 
+#if FEATURE_DRONECAN
 static health_flags_t health_snapshot(void)
 {
     health_flags_t health = (health_flags_t)(xEventGroupGetBits(app_events) & APP_HEALTH_MASK);
@@ -80,6 +81,7 @@ static health_flags_t health_snapshot(void)
     }
     return health;
 }
+#endif
 
 static void set_ready(EventBits_t bit, bool ready)
 {
@@ -123,6 +125,9 @@ void rtos_notify_communication_from_isr(void)
 
 static void publish_flow_to_protocols(const flow_sample_t *sample, bool bus_off, uint8_t *frame)
 {
+    (void)sample;
+    (void)bus_off;
+    (void)frame;
 #if FEATURE_MSP
     const size_t length = msp_encode_flow(sample, frame, 32U);
     if (length == 0U || !platform_uart_tx(frame, length)) {
@@ -142,6 +147,9 @@ static void publish_flow_to_protocols(const flow_sample_t *sample, bool bus_off,
 
 static void publish_range_to_protocols(const range_sample_t *sample, bool bus_off, uint8_t *frame)
 {
+    (void)sample;
+    (void)bus_off;
+    (void)frame;
 #if FEATURE_MSP
     const size_t length = msp_encode_range(sample, frame, 32U);
     if (length == 0U || !platform_uart_tx(frame, length)) {
@@ -163,15 +171,20 @@ static void communication_task(void *argument)
 {
     (void)argument;
     scheduler_started = true;
+#if FEATURE_MSP
     msp_parser_t parser;
     msp_parser_init(&parser);
+#endif
+#if FEATURE_DRONECAN
     dronecan_init();
     can_recovery_t recovery;
     can_recovery_init(&recovery);
+#endif
     uint8_t frame[32];
 
     for (;;) {
-        (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1U));
+        const uint32_t notification_count = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1U));
+#if FEATURE_DRONECAN
         const uint32_t now = platform_millis();
         const bool bus_off = platform_can_bus_off();
 
@@ -183,6 +196,9 @@ static void communication_task(void *argument)
         if (can_recovery_step(&recovery, bus_off, now, CAN_RECOVERY_MS)) {
             platform_can_reinit();
         }
+#else
+        const bool bus_off = false;
+#endif
 
         flow_sample_t flow_sample;
         while (xQueueReceive(flow_queue, &flow_sample, 0U) == pdPASS) {
@@ -193,12 +209,18 @@ static void communication_task(void *argument)
             publish_range_to_protocols(&range_sample, bus_off, frame);
         }
 
+#if FEATURE_MSP
         uint8_t byte;
         msp_frame_t received;
-        while (platform_uart_rx_pop(&byte)) {
+        for (uint32_t count = 0U; count < RTOS_COMM_UART_BUDGET_BYTES; count++) {
+            if (!platform_uart_rx_pop(&byte)) {
+                break;
+            }
             signal_activity(LED_MSP_RX);
             (void)msp_parser_consume(&parser, byte, &received);
         }
+#endif
+#if FEATURE_DRONECAN
         if (platform_take_can_rx_activity()) {
             signal_activity(LED_CAN_RX);
         }
@@ -206,7 +228,14 @@ static void communication_task(void *argument)
             health_update(HEALTH_CAN_RX_OVERFLOW, 0U);
         }
         dronecan_poll(now, health_snapshot());
+        if (dronecan_take_tx_overflow()) {
+            health_update(HEALTH_CAN_TX_OVERFLOW, 0U);
+        }
+#endif
         (void)xEventGroupSetBits(heartbeat_events, HEARTBEAT_COMMUNICATION);
+        if (notification_count != 0U) {
+            vTaskDelay(pdMS_TO_TICKS(1U));
+        }
     }
 }
 
@@ -218,11 +247,13 @@ static void flow_task(void *argument)
     pmw3901_reset_state(&pmw, platform_micros());
     pmw3901_start_init(&pmw, platform_micros());
     uint32_t retry_at_ms = start_ms + SENSOR_RETRY_MS;
+    uint32_t health_check_at_ms = start_ms + PMW3901_HEALTH_CHECK_MS;
     periodic_task_t publisher;
     periodic_task_init(&publisher, start_ms, 1000U / MSP_FLOW_HZ);
 
     for (;;) {
         uint32_t irq_count = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1U));
+        const uint32_t notification_count = irq_count;
         const uint32_t now_ms = platform_millis();
         const uint32_t now_us = platform_micros();
 
@@ -253,10 +284,21 @@ static void flow_task(void *argument)
             if (result == PMW_INIT_READY) {
                 health_update(0U, HEALTH_PMW_FAULT);
                 set_ready(APP_READY_FLOW, true);
+                health_check_at_ms = now_ms + PMW3901_HEALTH_CHECK_MS;
             } else if (result == PMW_INIT_FAULT) {
                 health_update(HEALTH_PMW_FAULT, 0U);
                 set_ready(APP_READY_FLOW, false);
                 pmw.init_state = 0U;
+                retry_at_ms = now_ms + SENSOR_RETRY_MS;
+            }
+        }
+
+        if (pmw.initialized && time_reached_u32(now_ms, health_check_at_ms)) {
+            health_check_at_ms = now_ms + PMW3901_HEALTH_CHECK_MS;
+            if (!pmw3901_health_check()) {
+                health_update(HEALTH_PMW_FAULT, 0U);
+                set_ready(APP_READY_FLOW, false);
+                pmw3901_reset_state(&pmw, now_us);
                 retry_at_ms = now_ms + SENSOR_RETRY_MS;
             }
         }
@@ -270,6 +312,9 @@ static void flow_task(void *argument)
             }
         }
         (void)xEventGroupSetBits(heartbeat_events, HEARTBEAT_FLOW);
+        if (notification_count != 0U) {
+            vTaskDelay(pdMS_TO_TICKS(1U));
+        }
     }
 }
 
@@ -308,6 +353,9 @@ static void range_task(void *argument)
             }
         }
         (void)xEventGroupSetBits(heartbeat_events, HEARTBEAT_RANGE);
+        if (irq_count != 0U) {
+            vTaskDelay(pdMS_TO_TICKS(1U));
+        }
     }
 }
 
@@ -444,6 +492,9 @@ void vApplicationStackOverflowHook(TaskHandle_t task, char *task_name)
     (void)task;
     (void)task_name;
     fatal_error = true;
+#if FEATURE_WS2812
+    (void)platform_ws2812_start(64U, 0U, 0U);
+#endif
     for (;;) {
     }
 }
@@ -453,6 +504,9 @@ void flowcan_rtos_assert_failed(const char *file, int line)
     (void)file;
     (void)line;
     fatal_error = true;
+#if FEATURE_WS2812
+    (void)platform_ws2812_start(64U, 0U, 0U);
+#endif
     for (;;) {
     }
 }
