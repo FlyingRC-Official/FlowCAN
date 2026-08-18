@@ -1,0 +1,24 @@
+name: firmware-ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-build-release:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host tools
+        run: sudo apt-get update && sudo apt-get install -y build-essential curl bzip2
+      - name: Install Arm GNU 10.2.1
+        run: |
+          curl -L --fail --retry 3 -o "$RUNNER_TEMP/gcc-arm.tar.bz2" "https://developer.arm.com/-/media/Files/downloads/gnu-rm/10-2020q4/gcc-arm-none-eabi-10-2020-q4-major-x86_64-linux.tar.bz2"
+          tar -xjf "$RUNNER_TEMP/gcc-arm.tar.bz2" -C "$RUNNER_TEMP"
+      - name: Verify
+        run: make TOOLCHAIN="$RUNNER_TEMP/gcc-arm-none-eabi-10-2020-q4-major/bin" verify
+      - name: Release artifacts
+        run: make TOOLCHAIN="$RUNNER_TEMP/gcc-arm-none-eabi-10-2020-q4-major/bin" release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flowcan-firmware
+          path: build/release/
