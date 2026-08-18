@@ -125,11 +125,11 @@ g_pfnVectors:
   .word  0
   .word  0
   .word  0
-  .word  SVC_Handler
+  .word  vPortSVCHandler
   .word  DebugMon_Handler
   .word  0
-  .word  PendSV_Handler
-  .word  SysTick_Handler
+  .word  xPortPendSVHandler
+  .word  xPortSysTickHandler
 
   /* External Interrupts */
   .word  WWDT_IRQHandler                     /* Window Watchdog Timer                   */
@@ -231,17 +231,8 @@ g_pfnVectors:
    .weak      UsageFault_Handler
    .thumb_set UsageFault_Handler,Default_Handler
 
-   .weak      SVC_Handler
-   .thumb_set SVC_Handler,Default_Handler
-
    .weak      DebugMon_Handler
    .thumb_set DebugMon_Handler,Default_Handler
-
-   .weak      PendSV_Handler
-   .thumb_set PendSV_Handler,Default_Handler
-
-   .weak      SysTick_Handler
-   .thumb_set SysTick_Handler,Default_Handler
 
    .weak      WWDT_IRQHandler
    .thumb_set WWDT_IRQHandler,Default_Handler

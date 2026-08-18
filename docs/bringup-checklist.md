@@ -6,6 +6,10 @@ None of the items below are satisfied by a successful host test or firmware buil
 |---|---|---|---|
 | Power / SWD | Current-limited 3.3 V supply; connect SWDIO PA13, SWCLK PA14, GND; program and reset | Current draw, successful verify, PC at reset/main | Not tested |
 | Clocks | Probe MCO/test build or timer-derived output | HSE 8 MHz, SYSCLK 144 MHz, APB1/APB2 72 MHz | Not tested |
+| FreeRTOS start | Break on the four task entry points and inspect exception vectors | Scheduler starts; SVC/PendSV/SysTick route to FreeRTOS; every task runs | Not tested |
+| RTOS IRQ wake | Trigger PMW, ToF, UART and CAN independently | Correct task wakes from ISR; no priority assertion or missed event | Not tested |
+| Task stacks | Run nominal and worst-case protocol traffic, then inspect high-water marks | Every task remains above 32 words free; no bit 8 warning | Not tested |
+| Watchdog supervision | Suspend each critical task separately and trigger an RTOS assertion test build | Feed is withheld and hardware resets within the configured watchdog interval | Not tested |
 | PMW3901 SPI | Capture PA5/6/7 and PA4 CS during ID read | Mode 3, ~1.125 MHz, ID `49/B6` | Not tested |
 | PMW3901 motion | Move over textured target at several heights | Signed X/Y, quality, no burst corruption, selected rotation | Not tested |
 | Flow scale | Traverse a measured path at fixed height and compare angular displacement | Replace provisional `FLOW_RAD_PER_COUNT=0.0015` with fitted value and uncertainty | Not tested |

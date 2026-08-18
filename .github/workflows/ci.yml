@@ -20,5 +20,5 @@ jobs:
         run: make TOOLCHAIN="$RUNNER_TEMP/gcc-arm-none-eabi-10-2020-q4-major/bin" release
       - uses: actions/upload-artifact@v4
         with:
-          name: flowcan-firmware
+          name: flowcan-rtos-firmware
           path: build/release/

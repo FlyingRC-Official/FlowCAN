@@ -4,10 +4,12 @@
 #include <string.h>
 #include "config.h"
 #include "flowcan/time_utils.h"
+#include "flowcan/ring.h"
 #include "msp.h"
 #include "dronecan.h"
 #include "pmw3901.h"
 #include "scheduler.h"
+#include "supervisor.h"
 #include "activity.h"
 #include "can_recovery.h"
 #include "vl53l1x.h"
@@ -33,6 +35,7 @@ static void test_dronecan(void)
     range_sample_t r={.distance_mm=1500,.status=RANGE_STATUS_VALID};assert(dronecan_encode_range(&r,&p));t=transfer_from(p.data,p.length);struct uavcan_equipment_range_sensor_Measurement rm;assert(!uavcan_equipment_range_sensor_Measurement_decode(&t,&rm));assert(rm.reading_type==1U&&fabsf(rm.range-1.5f)<0.01f&&rm.timestamp.usec==0U);
     assert(dronecan_range_reading_type(RANGE_STATUS_TOO_CLOSE)==2U&&dronecan_range_reading_type(RANGE_STATUS_TOO_FAR)==3U&&dronecan_range_reading_type(RANGE_STATUS_FAULT)==0U);
     assert(dronecan_encode_node_status(7U,HEALTH_CAN_BUS_OFF,&p));t=transfer_from(p.data,p.length);struct uavcan_protocol_NodeStatus ns;assert(!uavcan_protocol_NodeStatus_decode(&t,&ns));assert(ns.uptime_sec==7U&&ns.health==3U&&ns.vendor_specific_status_code==HEALTH_CAN_BUS_OFF);
+    assert(dronecan_encode_node_status(8U,HEALTH_RTOS_STACK_LOW,&p));t=transfer_from(p.data,p.length);assert(!uavcan_protocol_NodeStatus_decode(&t,&ns));assert(ns.health==2U&&ns.vendor_specific_status_code==HEALTH_RTOS_STACK_LOW);
     dronecan_init();bool saturated=false;for(unsigned i=0;i<100U;i++)if(!dronecan_publish_flow(&f)){saturated=true;break;}assert(saturated);dronecan_poll(1000U,HEALTH_CAN_TX_OVERFLOW);assert(dronecan_publish_flow(&f));dronecan_poll(1001U,0U);
 }
 
@@ -42,6 +45,8 @@ static void test_math_and_time(void)
     pmw3901_t p;pmw3901_reset_state(&p,0xFFFFFFF0U);p.initialized=true;pmw_motion_t m={.dx=100,.dy=-50,.quality=99,.motion=true};pmw3901_accumulate(&p,&m);flow_sample_t s;pmw3901_publish(&p,0x10U,&s);assert(s.integration_us==32U&&s.count_x==100&&s.count_y==-50&&p.accumulated_x==0);
     p.accumulated_x=INT32_MAX-1;p.accumulated_y=INT32_MIN+1;m.dx=100;m.dy=-100;pmw3901_accumulate(&p,&m);assert(p.accumulated_x==INT32_MAX&&p.accumulated_y==INT32_MIN);
     periodic_task_t task;periodic_task_init(&task,0xFFFFFFF0U,20U);assert(!periodic_task_due(&task,0U));assert(periodic_task_due(&task,4U));assert(!periodic_task_due(&task,5U));assert(elapsed_u32(1U,0xFFFFFFFFU)==2U);
+    assert(ring_can_write(256U,0U,0U,255U));assert(!ring_can_write(256U,0U,0U,256U));assert(ring_used(256U,2U,250U)==8U);assert(ring_can_write(256U,2U,250U,247U));assert(!ring_can_write(256U,2U,250U,248U));
+    const uint32_t good_watermarks[]={64U,48U,32U};const uint32_t low_watermarks[]={64U,31U,80U};assert(supervisor_should_feed(0x07U,0x07U,false));assert(!supervisor_should_feed(0x03U,0x07U,false));assert(!supervisor_should_feed(0x07U,0x07U,true));assert(!supervisor_stack_low(good_watermarks,3U,32U));assert(supervisor_stack_low(low_watermarks,3U,32U));
 }
 
 static bool led_state[4];static bool tof_enabled;static int tof_init_error;static VL53L1X_Result_t tof_result;

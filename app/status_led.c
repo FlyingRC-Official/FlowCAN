@@ -6,6 +6,7 @@ typedef struct{uint8_t r,g,b;uint16_t on_ms,period_ms;}pattern_t;
 static pattern_t select_pattern(health_flags_t h,bool init)
 {
     if(init)return(pattern_t){0,0,48,1000,1000};
+    if(h&HEALTH_RTOS_FATAL)return(pattern_t){64,0,0,50,100};
     if(h&HEALTH_CAN_BUS_OFF)return(pattern_t){48,0,48,100,500};
     if((h&(HEALTH_PMW_FAULT|HEALTH_TOF_FAULT))==(HEALTH_PMW_FAULT|HEALTH_TOF_FAULT))return(pattern_t){64,0,0,100,250};
     if(h&HEALTH_PMW_FAULT)return(pattern_t){64,0,0,200,1000};

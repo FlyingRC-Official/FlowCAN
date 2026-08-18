@@ -38,7 +38,10 @@ enum {
     HEALTH_CAN_RX_OVERFLOW = 1U << 4,
     HEALTH_CAN_TX_OVERFLOW = 1U << 5,
     HEALTH_SCHEDULER_LATE = 1U << 6,
-    HEALTH_WATCHDOG_MISSED = 1U << 7
+    HEALTH_WATCHDOG_MISSED = 1U << 7,
+    HEALTH_RTOS_STACK_LOW = 1U << 8,
+    HEALTH_RTOS_FATAL = 1U << 9,
+    HEALTH_UART_TX_OVERFLOW = 1U << 10
 };
 
 typedef uint16_t health_flags_t;

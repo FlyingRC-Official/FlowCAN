@@ -1,6 +1,8 @@
 #include "vl53l1_platform.h"
 #include "config.h"
 #include "platform.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 int8_t VL53L1_WriteMulti(uint16_t dev, uint16_t reg, uint8_t *data, uint32_t count)
 {
@@ -20,4 +22,10 @@ int8_t VL53L1_WrDWord(uint16_t d,uint16_t r,uint32_t v){uint8_t b[4]={(uint8_t)(
 int8_t VL53L1_RdByte(uint16_t d,uint16_t r,uint8_t *v){return VL53L1_ReadMulti(d,r,v,1U);}
 int8_t VL53L1_RdWord(uint16_t d,uint16_t r,uint16_t *v){uint8_t b[2];int8_t e=VL53L1_ReadMulti(d,r,b,2U);*v=(uint16_t)((uint16_t)b[0]<<8U|b[1]);return e;}
 int8_t VL53L1_RdDWord(uint16_t d,uint16_t r,uint32_t *v){uint8_t b[4];int8_t e=VL53L1_ReadMulti(d,r,b,4U);*v=(uint32_t)b[0]<<24U|(uint32_t)b[1]<<16U|(uint32_t)b[2]<<8U|b[3];return e;}
-int8_t VL53L1_WaitMs(uint16_t dev,int32_t ms){(void)dev;if(ms<0)return -1;platform_delay_us((uint32_t)ms*1000U);return 0;}
+int8_t VL53L1_WaitMs(uint16_t dev,int32_t ms)
+{
+    (void)dev;
+    if(ms<0)return -1;
+    if(ms>0){TickType_t ticks=pdMS_TO_TICKS((uint32_t)ms);vTaskDelay(ticks==0U?1U:ticks);}
+    return 0;
+}
