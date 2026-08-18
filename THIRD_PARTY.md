@@ -5,7 +5,7 @@ FlowCAN source is MIT-licensed. The following vendored components keep their ups
 | Component | Pinned version / revision | Source | License |
 |---|---|---|---|
 | Artery AT32F415 BSP | v2.0.7 (2022-08-16 headers) | Artery AT32F415 firmware library | Artery BSP notice in every source file; use is authorized with Artery MCUs |
-| libcanard | v0.2 from the local AM32 vendor snapshot | [DroneCAN/libcanard](https://github.com/dronecan/libcanard) | MIT, see `third_party/libcanard/LICENSE` |
+| libcanard | v0.2 local AM32 vendor snapshot; `canard.c` SHA-256 `5fc1e768102dd53ffbb64741e7ff3888a5ea8a12736f7d302404cd7ca9ec020f`, `canard.h` SHA-256 `dacac3f613cbfc0d6adda6bf31b928ef6d80423ed1ce7361c94e2434ddbb391e` | [DroneCAN/libcanard](https://github.com/dronecan/libcanard) | MIT, see `third_party/libcanard/LICENSE` |
 | VL53L1X ULD core | API 3.5.0, repository commit `1c474582e72733bd7f4df83a266bad7d3b83bbf5` | [rneurink/VL53L1X_ULD](https://github.com/rneurink/VL53L1X_ULD), derived from ST STSW-IMG009 | BSD-3-Clause, see `third_party/st-vl53l1x/LICENSE` and source headers |
 | PMW3901 register sequence | commit `d322d98d6f61757352d11d922cd194539e165231` | [Bitcraze/Bitcraze_PMW3901](https://github.com/bitcraze/Bitcraze_PMW3901) | MIT, see `third_party/PMW3901-LICENSE` |
 | DroneCAN DSDL | commit `b4653c7abc3c47cb31b16efa24ea755232774756` | [DroneCAN/DSDL](https://github.com/dronecan/DSDL) | MIT, see `third_party/dronecan/LICENSE` |

@@ -12,7 +12,7 @@ uint32_t platform_micros(void);
 void platform_delay_us(uint32_t us);
 void platform_watchdog_feed(void);
 
-uint8_t platform_spi_transfer(uint8_t value);
+bool platform_spi_transfer(uint8_t value, uint8_t *received);
 void platform_pmw_cs(bool asserted);
 void platform_pmw_reset(bool asserted);
 bool platform_take_pmw_irq(void);

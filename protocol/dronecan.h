@@ -10,6 +10,7 @@ typedef struct { uint8_t data[32]; uint16_t length; } dronecan_payload_t;
 
 void dronecan_init(void);
 void dronecan_poll(uint32_t now_ms, health_flags_t health);
+bool dronecan_take_tx_overflow(void);
 bool dronecan_publish_flow(const flow_sample_t *sample);
 bool dronecan_publish_range(const range_sample_t *sample);
 bool dronecan_encode_flow(const flow_sample_t *sample, dronecan_payload_t *payload);

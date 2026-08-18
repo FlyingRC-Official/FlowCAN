@@ -23,6 +23,7 @@ typedef enum { PMW_INIT_BUSY, PMW_INIT_READY, PMW_INIT_FAULT } pmw_init_result_t
 void pmw3901_start_init(pmw3901_t *dev, uint32_t now_us);
 pmw_init_result_t pmw3901_init_step(pmw3901_t *dev, uint32_t now_us);
 bool pmw3901_read_motion(pmw_motion_t *motion);
+bool pmw3901_health_check(void);
 void pmw3901_accumulate(pmw3901_t *dev, const pmw_motion_t *motion);
 void pmw3901_publish(pmw3901_t *dev, uint32_t now_us, flow_sample_t *sample);
 void pmw3901_transform(int16_t raw_x, int16_t raw_y, int32_t *x, int32_t *y);

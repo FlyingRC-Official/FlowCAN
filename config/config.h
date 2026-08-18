@@ -7,6 +7,7 @@
 #define FW_VERSION_MINOR 0U
 #define FW_VERSION_PATCH 0U
 #define FW_VERSION_STRING "1.0.0"
+#define FW_BUILD_VARIANT "baremetal"
 
 #define HSE_HZ 8000000UL
 #define SYSCLK_HZ 144000000UL
@@ -21,10 +22,20 @@
 #define CAN_RX_QUEUE_SIZE 16U
 #define CAN_RECOVERY_MS 1000U
 #define CAN_TX_DEADLINE_US 100000UL
+#define CAN_HIGH_PRIORITY_TX_DEADLINE_US 500000UL
+#define CANARD_CLEANUP_INTERVAL_US 50000UL
+#define CANARD_HIGH_PRIORITY_RESERVE_BLOCKS 16U
+#define DRONECAN_RX_BUDGET_FRAMES 16U
+#define DRONECAN_TX_BUDGET_FRAMES 16U
 #define DRONECAN_NODE_NAME "com.flyingrc.flowcan"
 #define DRONECAN_NODE_STATUS_HZ 1U
 #define DRONECAN_FLOW_HZ 50U
 #define DRONECAN_RANGE_HZ 40U
+/* Keep orientation undefined until the receiver-specific body-down encoding is HIL-verified. */
+#define DRONECAN_RANGE_ORIENTATION_DEFINED 0
+#define DRONECAN_RANGE_ROLL_COARSE 0
+#define DRONECAN_RANGE_PITCH_COARSE 0
+#define DRONECAN_RANGE_YAW_COARSE 0
 
 #define MSP_BAUDRATE 115200UL
 #define MSP_FLOW_HZ 50U
@@ -34,7 +45,10 @@
 
 #define PMW3901_PRODUCT_ID 0x49U
 #define PMW3901_INVERSE_ID 0xB6U
-#define PMW3901_SPI_HZ 1125000UL
+#define PMW3901_SPI_DIV 64U
+#define PMW3901_SPI_HZ (APB2_HZ / PMW3901_SPI_DIV)
+#define PMW3901_SPI_TIMEOUT_US 1000U
+#define PMW3901_HEALTH_CHECK_MS 1000U
 #define FLOW_ROTATION_DEG 0
 #define FLOW_SWAP_XY 0
 #define FLOW_SIGN_X 1
@@ -48,6 +62,7 @@
 #define VL53L1X_I2C_HZ 400000UL
 #define VL53L1X_TIMING_BUDGET_MS 20U
 #define VL53L1X_INTER_MEASUREMENT_MS 25U
+#define VL53L1X_SAMPLE_TIMEOUT_MS 100U
 #define SENSOR_RETRY_MS 1000U
 #define I2C_TIMEOUT_US 5000U
 #define RANGE_MIN_MM 80
@@ -55,9 +70,27 @@
 #define RANGE_OFFSET_MM 0
 
 #define ACTIVITY_LED_HOLD_MS 30U
+#define MAIN_UART_RX_BUDGET_BYTES 64U
 #define WATCHDOG_TIMEOUT_MS 500U
+#define WATCHDOG_CLOCK_HZ 40000UL
+#define WATCHDOG_DIVIDER 256UL
+#ifndef FEATURE_MSP
 #define FEATURE_MSP 1
+#endif
+#ifndef FEATURE_DRONECAN
 #define FEATURE_DRONECAN 1
+#endif
+#ifndef FEATURE_WS2812
 #define FEATURE_WS2812 1
+#endif
+
+_Static_assert((APB1_HZ % (CAN_BITRATE * 18UL)) == 0UL,
+               "CAN_BITRATE must be exactly representable with the fixed 18 TQ layout");
+_Static_assert(DRONECAN_FLOW_HZ == MSP_FLOW_HZ,
+               "Flow snapshots are shared, so MSP and DroneCAN flow rates must match");
+_Static_assert(DRONECAN_RANGE_HZ == MSP_RANGE_HZ,
+               "Range snapshots are shared, so MSP and DroneCAN range rates must match");
+_Static_assert(DRONECAN_NODE_STATUS_HZ > 0U && (1000U % DRONECAN_NODE_STATUS_HZ) == 0U,
+               "NodeStatus rate must divide 1000 ms exactly");
 
 #endif
